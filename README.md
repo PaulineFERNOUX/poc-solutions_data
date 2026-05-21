@@ -1,39 +1,48 @@
 # POC Avantages sportifs — Sport Data Solution
 
-**Contexte.** Dispositif d’avantages pour encourager la pratique sportive des collaborateurs (prime mobilité active, journées bien-être, visibilité sur Slack). Ce dépôt contient le **POC technique** : pipeline de données de bout en bout.
+Dispositif d’avantages pour encourager la pratique sportive des collaborateurs (prime mobilité active, journées bien-être, visibilité collective via Slack). Ce dépôt contient le **POC technique** : ingestion, CDC, notifications et contrôles qualité.
 
 ## Architecture
 
 ```text
-Excel → generator → PostgreSQL (activities)
-                          ↓ CDC (Debezium)
-                    Redpanda (dbz.public.activities)
-                          ↓
-                    Slack (messages personnalisés)
-                          ↓
-                    S3 (à venir)
+Excel (RH + sportif)
+       ↓
+  generator ──► PostgreSQL (activities)
+                       ↓ CDC (Debezium)
+                 Redpanda (dbz.public.activities)
+                    ↙         ↘
+            slack/notify    (futur) Spark → Delta → Power BI
 ```
+
+| Composant | Statut |
+|-----------|--------|
+| PostgreSQL + génération activités | ✅ |
+| Debezium + Redpanda + Console | ✅ |
+| Notifications Slack personnalisées | ✅ |
+| Qualité des données (Soda) | ✅ |
+| Data lake Spark + Delta + S3 | 🔜 |
+| Power BI (KPI, impact financier) | 🔜 |
 
 ## Données
 
 | Fichier | Usage |
 |---------|--------|
-| `data/Données+RH.xlsx` | Salariés (`ID salarié`, `Prénom`, `Nom`, …) |
+| `data/Données+RH.xlsx` | Référentiel salariés (`ID salarié`, `Prénom`, `Nom`, moyen de déplacement, …) |
 | `data/Données+Sportive.xlsx` | Pratique sportive par salarié |
 
-Les activités (simulation type Strava) sont dans la table `activities` : id, employee_id, dates, type, distance_m, commentaire.
+Table **`activities`** : `id`, `employee_id`, `start_date`, `end_date`, `activity_type`, `distance_m`, `comment`.
 
 ## Prérequis
 
-- Docker (Docker Desktop, WSL recommandé sous Windows)
-- Fichiers Excel dans `data/` (non versionnés si données sensibles — à adapter selon votre politique)
-- Fichier `.env` avec `SLACK_WEBHOOK_URL` (voir `.env.example`)
+- Docker (Docker Desktop, WSL sous Windows)
+- Fichiers Excel dans `data/`
+- `.env` à partir de `.env.example` (`SLACK_WEBHOOK_URL`)
 
-## Installation et démarrage
+## Démarrage
 
 ```bash
 cp .env.example .env
-# Éditer .env : coller l’URL du webhook Slack
+# Éditer .env : URL du webhook Slack
 
 docker compose up -d --build
 bash debezium/register-connector.sh
@@ -41,67 +50,76 @@ bash debezium/register-connector.sh
 
 ## Interfaces
 
-| URL / commande | Rôle |
-|----------------|------|
-| [http://localhost:8080](http://localhost:8080) | Redpanda Console (topics, messages) |
-| http://localhost:8083 | API Debezium / Kafka Connect |
-| `localhost:5432` | PostgreSQL — `sportsdb` / `appuser` / `apppass` |
+| URL | Rôle |
+|-----|------|
+| [http://localhost:8080](http://localhost:8080) | Redpanda Console |
+| http://localhost:8083 | API Debezium |
+| `localhost:5432` | PostgreSQL (`sportsdb` / `appuser` / `apppass`) |
 
 Topic CDC : **`dbz.public.activities`**
 
-## Démo live (Slack)
+## Scénarios d’usage
 
-Le service `slack` écoute Redpanda et poste sur Slack uniquement les **nouveaux INSERT** (`op: c`), avec prénom/nom depuis le fichier RH.
-
-Messages type : *« Bravo Prénom Nom ! Tu viens de courir 10,8 km en 46 min ! … »*
+### 1. Historique 12 mois (sans flood Slack)
 
 ```bash
-# Consumer Slack déjà lancé via docker compose up -d
+docker compose stop slack
+docker compose run --rm generator
+# option : SLACK_ENABLED=false dans .env si le service slack tourne encore
+```
+
+Environ **2 000–3 300** activités (`HISTORY_DAYS=365`, 15–35 activités/salarié avec un sport).  
+**Ne pas** relancer `slack` juste après le generator (sinon rattrapage des milliers d’événements sur le topic).
+
+### 2. Contrôles qualité (Soda)
+
+```bash
+docker compose run --rm soda
+```
+
+Règles : distances non négatives, dates cohérentes, champs obligatoires, pas de doublon `id`, fenêtre 12 mois. Détail : [docs/qualite-donnees.md](docs/qualite-donnees.md).
+
+### 3. Démo live Slack (3 activités, 1/min)
+
+```bash
+docker compose up -d slack
 docker compose run --rm slack python demo_insert.py
 ```
 
-La démo insère **3 activités**, espacées d’**1 minute**.
+Messages personnalisés (prénom/nom depuis le RH), ex. *« Bravo Prénom Nom ! Tu viens de courir 10,8 km en 46 min ! … »*
 
-## Autres commandes utiles
+## Commandes utiles
 
 ```bash
-# Compter les activités en base
 docker exec -it pg_activities psql -U appuser -d sportsdb -c "SELECT COUNT(*) FROM activities;"
-
-# Lister les topics
 docker compose exec redpanda rpk topic list
-
-# Remplir la base en masse (simulation initiale)
-docker compose run --rm generator
-
-# Reconstruire le consumer Slack après modification de notify.py
-docker compose up -d --build slack
-```
-
-## Arrêt
-
-```bash
-docker compose down          # conserve les données (volume pgdata)
-docker compose down -v       # supprime volumes (reset complet)
+docker compose up -d --build slack   # après modif de notify.py
 ```
 
 ## Structure du dépôt
 
 ```text
-├── data/                    # Excel RH + sportif (local)
-├── postgres/init/           # Schéma SQL
-├── generator/               # Génération d’activités
-├── debezium/                # Connecteur CDC
-├── slack/                   # notify.py + demo_insert.py
+├── data/
+├── postgres/init/
+├── generator/
+├── debezium/
+├── quality/              # Soda
+├── slack/
+├── docs/qualite-donnees.md
 ├── docker-compose.yml
 └── .env.example
 ```
 
+## Arrêt
+
+```bash
+docker compose down          # conserve les données
+docker compose down -v       # reset complet (volumes)
+```
+
 ## Suite prévue
 
-- Archivage **S3** (boto3) sur les événements Redpanda
-- **Power BI** : indicateurs et historique rejouable
-
-## Dépannage Docker (WSL)
-
-Si `docker compose up --build` échoue avec `docker-credential-desktop.exe: exec format error`, retirer `"credsStore"` dans `~/.docker/config.json` sous WSL, ou lancer Docker depuis PowerShell.
+- Spark + **Delta Lake** (bronze / gold) et référentiels sur S3
+- Contrôle Google Maps (cohérence déplacement domicile ↔ bureau)
+- **Power BI** : éligibilité avantages, coût estimé, historique rejouable
+- Monitoring des flux

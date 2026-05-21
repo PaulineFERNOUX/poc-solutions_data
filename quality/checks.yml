@@ -1,0 +1,44 @@
+# Contrôles de cohérence — table public.activities
+# Commande : docker compose run --rm soda
+
+checks for activities:
+  # Volume
+  - row_count > 0:
+      name: Au moins une activite en base
+
+  # Champs obligatoires
+  - missing_count(id) = 0
+  - missing_count(employee_id) = 0
+  - missing_count(start_date) = 0
+  - missing_count(end_date) = 0
+  - missing_count(activity_type) = 0
+
+  # Unicité
+  - duplicate_count(id) = 0:
+      name: Pas de doublon sur id
+
+  # Distance : NULL ou >= 0
+  - invalid_count(distance_m) = 0:
+      name: Distance non negative
+      valid min: 0
+
+  # Dates et libellés (SQL)
+  - failed rows:
+      name: Date de fin apres date de debut
+      fail condition: end_date < start_date
+
+  - failed rows:
+      name: Duree strictement positive
+      fail condition: end_date <= start_date
+
+  - failed rows:
+      name: Type d activite non vide
+      fail condition: TRIM(activity_type) = ''
+
+  - failed rows:
+      name: Date de debut pas dans le futur lointain
+      fail condition: start_date > CURRENT_TIMESTAMP + INTERVAL '1 day'
+
+  - failed rows:
+      name: Date de debut dans la fenetre historique 12 mois
+      fail condition: start_date < CURRENT_TIMESTAMP - INTERVAL '366 days'

@@ -1,0 +1,8 @@
+data_source postgres:
+  type: postgres
+  host: postgres
+  port: "5432"
+  username: appuser
+  password: apppass
+  database: sportsdb
+  schema: public

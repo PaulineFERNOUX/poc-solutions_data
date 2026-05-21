@@ -11,6 +11,7 @@ from kafka import KafkaConsumer
 WEBHOOK = os.environ.get("SLACK_WEBHOOK_URL")
 BOOTSTRAP = os.environ.get("KAFKA_BOOTSTRAP", "redpanda:9092")
 TOPIC = os.environ.get("KAFKA_TOPIC", "dbz.public.activities")
+SLACK_ENABLED = os.environ.get("SLACK_ENABLED", "true").lower() in ("1", "true", "yes")
 
 COL_ID = "ID salarié"
 
@@ -96,6 +97,9 @@ def main():
     if not WEBHOOK:
         sys.exit("SLACK_WEBHOOK_URL manquant (fichier .env ou variable d'environnement)")
 
+    if not SLACK_ENABLED:
+        print("SLACK_ENABLED=false — écoute du topic sans envoi Slack (chargement masse).")
+
     names = load_names()
     consumer = KafkaConsumer(
         TOPIC,
@@ -116,7 +120,8 @@ def main():
             continue
 
         text = build_message(after, names)
-        requests.post(WEBHOOK, json={"text": text}, timeout=10).raise_for_status()
+        if SLACK_ENABLED:
+            requests.post(WEBHOOK, json={"text": text}, timeout=10).raise_for_status()
         print(text)
 
 

@@ -31,8 +31,9 @@ services:
       DB_USER: appuser
       DB_PASSWORD: apppass
       SPORT_FILE: /app/data/Données+Sportive.xlsx
-      ACTIVITIES_PER_EMPLOYEE_MIN: 0
-      ACTIVITIES_PER_EMPLOYEE_MAX: 0
+      HISTORY_DAYS: 365
+      ACTIVITIES_PER_EMPLOYEE_MIN: 15
+      ACTIVITIES_PER_EMPLOYEE_MAX: 35
     volumes:
       - ./data:/app/data
     restart: "no"
@@ -104,6 +105,14 @@ services:
         condition: service_healthy
     ports:
       - "8083:8083"
+
+  soda:
+    build: ./quality
+    container_name: sds_soda_checks
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
 
   slack:
     build: ./slack
