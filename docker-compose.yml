@@ -1,0 +1,135 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: pg_activities
+    environment:
+      POSTGRES_DB: sportsdb
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: apppass
+    ports:
+      - "5432:5432"
+    command: ["postgres", "-c", "wal_level=logical"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d sportsdb"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  generator:
+    build: ./generator
+    container_name: activities_generator
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: sportsdb
+      DB_USER: appuser
+      DB_PASSWORD: apppass
+      SPORT_FILE: /app/data/Données+Sportive.xlsx
+      ACTIVITIES_PER_EMPLOYEE_MIN: 0
+      ACTIVITIES_PER_EMPLOYEE_MAX: 0
+    volumes:
+      - ./data:/app/data
+    restart: "no"
+
+  redpanda:
+    image: docker.redpanda.com/redpandadata/redpanda:${REDPANDA_VERSION:-v26.1.8}
+    container_name: redpanda
+    command:
+      - redpanda
+      - start
+      - --mode dev-container
+      - --smp 1
+      - --kafka-addr internal://0.0.0.0:9092,external://0.0.0.0:19092
+      - --advertise-kafka-addr internal://redpanda:9092,external://localhost:19092
+      - --pandaproxy-addr internal://0.0.0.0:8082,external://0.0.0.0:18082
+      - --advertise-pandaproxy-addr internal://redpanda:8082,external://localhost:18082
+      - --schema-registry-addr internal://0.0.0.0:8081,external://0.0.0.0:18081
+      - --rpc-addr redpanda:33145
+      - --advertise-rpc-addr redpanda:33145
+    ports:
+      - "18081:18081"
+      - "18082:18082"
+      - "19092:19092"
+      - "9644:9644"
+    volumes:
+      - redpanda:/var/lib/redpanda/data
+    healthcheck:
+      test: ["CMD-SHELL", "rpk cluster health | grep -E 'Healthy:.+true' || exit 1"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
+  console:
+    image: docker.redpanda.com/redpandadata/console:${REDPANDA_CONSOLE_VERSION:-v3.7.3}
+    container_name: sds_redpanda_console
+    entrypoint: /bin/sh
+    command: -c 'echo "$$CONSOLE_CONFIG_FILE" > /tmp/config.yml; /app/console'
+    environment:
+      CONFIG_FILEPATH: /tmp/config.yml
+      CONSOLE_CONFIG_FILE: |
+        kafka:
+          brokers: ["redpanda:9092"]
+        schemaRegistry:
+          enabled: true
+          urls: ["http://redpanda:8081"]
+        redpanda:
+          adminApi:
+            enabled: true
+            urls: ["http://redpanda:9644"]
+    ports:
+      - "8080:8080"
+    depends_on:
+      redpanda:
+        condition: service_healthy
+
+  debezium:
+    image: debezium/connect:2.4
+    container_name: debezium
+    environment:
+      BOOTSTRAP_SERVERS: redpanda:9092
+      GROUP_ID: 1
+      CONFIG_STORAGE_TOPIC: connect_configs
+      OFFSET_STORAGE_TOPIC: connect_offsets
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redpanda:
+        condition: service_healthy
+    ports:
+      - "8083:8083"
+
+  slack:
+    build: ./slack
+    container_name: sds_slack_consumer
+    command: ["python", "notify.py"]
+    env_file: .env
+    environment:
+      KAFKA_BOOTSTRAP: redpanda:9092
+      KAFKA_TOPIC: dbz.public.activities
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: sportsdb
+      DB_USER: appuser
+      DB_PASSWORD: apppass
+      RH_FILE: /app/data/Données+RH.xlsx
+    volumes:
+      - ./data:/app/data
+    depends_on:
+      redpanda:
+        condition: service_healthy
+      debezium:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  redpanda:

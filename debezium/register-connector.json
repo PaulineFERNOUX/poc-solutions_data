@@ -1,0 +1,15 @@
+{
+  "name": "postgres-connector",
+  "config": {
+    "connector.class": "io.debezium.connector.postgresql.PostgresConnector",
+    "plugin.name": "pgoutput",
+    "database.hostname": "postgres",
+    "database.port": "5432",
+    "database.user": "appuser",
+    "database.password": "apppass",
+    "database.dbname": "sportsdb",
+    "database.server.name": "postgres",
+    "table.include.list": "public.activities",
+    "topic.prefix": "dbz"
+  }
+}

@@ -1,0 +1,5 @@
+kafka-python
+requests
+pandas
+openpyxl
+psycopg2-binary
