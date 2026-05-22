@@ -17,6 +17,8 @@ COMMENTS = [
     "Belle séance",
     "Reprise du sport :)",
     "Randonnée de St Guilhem le desert, je vous la conseille c'est top",
+    "Sortie sportive avec la famille",
+    "Sortie sportive avec les amis",
 ]
 
 
