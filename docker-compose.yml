@@ -31,9 +31,11 @@ services:
       DB_USER: appuser
       DB_PASSWORD: apppass
       SPORT_FILE: /app/data/Données+Sportive.xlsx
-      HISTORY_DAYS: 365
-      ACTIVITIES_PER_EMPLOYEE_MIN: 15
-      ACTIVITIES_PER_EMPLOYEE_MAX: 35
+      # Aligné sur generator/generate_activities.py (surcharge possible via .env)
+      GENERATOR_START_DATE: ${GENERATOR_START_DATE:-2025-01-01}
+      GENERATOR_END_DATE: ${GENERATOR_END_DATE:-}
+      ACTIVITIES_PER_EMPLOYEE_MIN: ${ACTIVITIES_PER_EMPLOYEE_MIN:-0}
+      ACTIVITIES_PER_EMPLOYEE_MAX: ${ACTIVITIES_PER_EMPLOYEE_MAX:-50}
     volumes:
       - ./data:/app/data
     restart: "no"
@@ -114,7 +116,71 @@ services:
         condition: service_healthy
     restart: "no"
 
+  minio:
+    image: minio/minio:RELEASE.2024-12-18T13-15-44Z
+    container_name: minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9000/minio/health/live || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: minio_init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: /bin/sh
+    command: -c "sh /scripts/init-bucket.sh"
+    environment:
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      DATALAKE_BUCKET: ${DATALAKE_BUCKET:-datalake}
+    volumes:
+      - ./minio/init-bucket.sh:/scripts/init-bucket.sh:ro
+    restart: "no"
+
+  spark:
+    build: ./spark
+    container_name: spark
+    entrypoint: ["/opt/spark/bin/spark-submit"]
+    environment:
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT:-http://minio:9000}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      DATALAKE_BUCKET: ${DATALAKE_BUCKET:-datalake}
+      KAFKA_BOOTSTRAP: ${KAFKA_BOOTSTRAP:-redpanda:9092}
+      KAFKA_TOPIC: ${KAFKA_TOPIC:-dbz.public.activities}
+      RH_FILE: /app/data/Données+RH.xlsx
+      SPORT_FILE: /app/data/Données+Sportive.xlsx
+      GOOGLE_MAPS_API_KEY: ${GOOGLE_MAPS_API_KEY:-}
+      SILVER_ONLY_EMPLOYEE_ID: ${SILVER_ONLY_EMPLOYEE_ID:-}
+    volumes:
+      - ./spark/jobs:/app/jobs:ro
+      - ./spark/config:/app/config:ro
+      - ./data:/app/data:ro
+    depends_on:
+      minio:
+        condition: service_healthy
+      minio-init:
+        condition: service_completed_successfully
+      redpanda:
+        condition: service_healthy
+    restart: "no"
+
   slack:
+    profiles: ["slack"]
     build: ./slack
     container_name: sds_slack_consumer
     command: ["python", "notify.py"]
@@ -137,8 +203,9 @@ services:
         condition: service_started
       postgres:
         condition: service_healthy
-    restart: unless-stopped
+    restart: "no"
 
 volumes:
   pgdata:
   redpanda:
+  minio_data:

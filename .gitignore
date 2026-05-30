@@ -2,3 +2,9 @@
 __pycache__/
 *.pyc
 .venv/
+
+# MinIO / Spark POC
+.spark/
+metastore_db/
+derby.log
+data/out/

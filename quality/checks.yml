@@ -38,7 +38,3 @@ checks for activities:
   - failed rows:
       name: Date de debut pas dans le futur lointain
       fail condition: start_date > CURRENT_TIMESTAMP + INTERVAL '1 day'
-
-  - failed rows:
-      name: Date de debut dans la fenetre historique 12 mois
-      fail condition: start_date < CURRENT_TIMESTAMP - INTERVAL '366 days'

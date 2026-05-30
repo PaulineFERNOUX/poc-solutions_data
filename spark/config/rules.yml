@@ -1,0 +1,14 @@
+office_address: "1362 Av. des Platanes, 34970 Lattes"
+
+# Marche/running → WALK, max 15 km
+# Vélo/Trottinette/Autres → BICYCLE, max 25 km
+# Transports en commun / véhicule → pas d'appel API
+
+gold:
+  prime_rate: 0.05
+  min_activities_for_wellbeing: 15
+  wellbeing_days: 5
+  sportive_commute_modes:
+    - "Marche/running"
+    - "Vélo/Trottinette/Autres"
+  exclude_commute_anomaly: true

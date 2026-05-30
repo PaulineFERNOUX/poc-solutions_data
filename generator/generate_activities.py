@@ -48,6 +48,37 @@ def random_id(used_ids: set[int]) -> int:
             return n
 
 
+def parse_date(value: str) -> datetime:
+    return datetime.strptime(value.strip(), "%Y-%m-%d").replace(tzinfo=timezone.utc)
+
+
+def generator_bounds() -> tuple[datetime, datetime]:
+    """
+    Fenêtre calendaire des activités générées.
+
+    GENERATOR_START_DATE : début inclus (défaut 2025-01-01)
+    GENERATOR_END_DATE   : fin inclusive, 23:59:59 UTC (défaut : maintenant)
+    """
+    start = parse_date(os.environ.get("GENERATOR_START_DATE", "2025-01-01"))
+    end_raw = os.environ.get("GENERATOR_END_DATE", "").strip()
+    if end_raw:
+        end = parse_date(end_raw).replace(hour=23, minute=59, second=59)
+    else:
+        end = datetime.now(timezone.utc)
+    if start > end:
+        raise ValueError(
+            f"GENERATOR_START_DATE ({start.date()}) postérieure à la fin ({end.date()})"
+        )
+    return start, end
+
+
+def random_start_between(start: datetime, end: datetime) -> datetime:
+    span_seconds = int((end - start).total_seconds())
+    if span_seconds <= 0:
+        return start
+    return start + timedelta(seconds=random.randint(0, span_seconds))
+
+
 def main():
     path = os.environ.get("SPORT_FILE", "")
     if not os.path.isfile(path):
@@ -69,10 +100,9 @@ def main():
         print("Aucun salarié avec une pratique sportive.")
         return
 
-    history_days = int(os.environ.get("HISTORY_DAYS", 365))
-    n_min = int(os.environ.get("ACTIVITIES_PER_EMPLOYEE_MIN", 15))
-    n_max = int(os.environ.get("ACTIVITIES_PER_EMPLOYEE_MAX", 35))
-    now = datetime.now(timezone.utc)
+    start, end = generator_bounds()
+    n_min = int(os.environ.get("ACTIVITIES_PER_EMPLOYEE_MIN", 0))
+    n_max = int(os.environ.get("ACTIVITIES_PER_EMPLOYEE_MAX", 50))
 
     used_ids: set[int] = set()
     rows = []
@@ -80,10 +110,7 @@ def main():
         emp_id = int(line[COL_ID])
         sport = line[COL_SPORT]
         for _ in range(random.randint(n_min, n_max)):
-            debut = now - timedelta(
-                days=random.randint(0, history_days - 1),
-                minutes=random.randint(0, 1439),
-            )
+            debut = random_start_between(start, end)
             duree = timedelta(minutes=random.randint(20, 180))
             rows.append((
                 random_id(used_ids),
@@ -110,9 +137,10 @@ def main():
             ON CONFLICT (id) DO NOTHING
         """, rows)
 
-    print(f"Historique : {history_days} jours — {len(rows)} activités pour {len(df)} salariés.")
-    print("Astuce : arrêter le service slack avant ce chargement pour éviter des milliers de notifications.")
-    print("  docker compose stop slack")
+    print(
+        f"Période : {start.date()} → {end.date()} — "
+        f"{len(rows)} activités pour {len(df)} salariés."
+    )
 
 
 if __name__ == "__main__":
