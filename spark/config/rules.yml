@@ -5,9 +5,9 @@ office_address: "1362 Av. des Platanes, 34970 Lattes"
 # Transports en commun / véhicule → pas d'appel API
 
 gold:
-  prime_rate: 0.05
-  min_activities_for_wellbeing: 15
-  wellbeing_days: 5
+  prime_rate: 0.07
+  min_activities_for_wellbeing: 10
+  wellbeing_days: 3
   sportive_commute_modes:
     - "Marche/running"
     - "Vélo/Trottinette/Autres"

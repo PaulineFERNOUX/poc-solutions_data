@@ -1,13 +1,12 @@
 """
-Silver simplifie : activites dedupliquees + RH enrichi pour la couche Gold.
+Silver : activites (etat courant bronze CDC) + RH enrichi pour la couche Gold.
 """
 import os
 import sys
 
 import pandas as pd
 from pyspark.sql import SparkSession
-from pyspark.sql.functions import col, desc, row_number
-from pyspark.sql.window import Window
+from pyspark.sql.functions import col
 
 from commute_modes import OFFICE, clean_commute_mode, google_route
 from routes_client import distance_km
@@ -57,12 +56,16 @@ def main() -> None:
     bronze = spark.read.format("delta").load(f"s3a://{bucket}/bronze/activities")
     rh = spark.read.format("delta").load(f"s3a://{bucket}/ref/rh")
 
-    w = Window.partitionBy("id").orderBy(desc("offset"))
-    silver_acts = (
-        bronze.filter(col("op") == "c")
-        .withColumn("rn", row_number().over(w))
-        .filter(col("rn") == 1)
-        .drop("rn")
+    # Bronze = etat courant (MERGE CDC Debezium c/u/r/d)
+    silver_acts = bronze.select(
+        "id",
+        "employee_id",
+        "start_date",
+        "activity_type",
+        "distance_m",
+        "end_date",
+        "comment",
+        "created_at",
     )
 
     rh_pdf = rh.toPandas()

@@ -10,6 +10,12 @@
     "database.dbname": "sportsdb",
     "database.server.name": "postgres",
     "table.include.list": "public.activities",
-    "topic.prefix": "dbz"
+    "topic.prefix": "dbz",
+    "slot.name": "debezium_activities",
+    "publication.name": "dbz_publication",
+    "publication.autocreate.mode": "filtered",
+    "snapshot.mode": "initial",
+    "tombstones.on.delete": "false",
+    "heartbeat.interval.ms": "10000"
   }
 }

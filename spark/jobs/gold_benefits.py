@@ -2,10 +2,11 @@
 Gold minimal pour Power BI : KPI avantages par salarie et par annee.
 """
 import os
+import sys
 from typing import Dict, List, Optional
 
 import yaml
-from pyspark.sql import SparkSession
+from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql.functions import (
     coalesce,
     col,
@@ -24,6 +25,16 @@ def pick_first_column(columns: List[str], candidates: List[str]) -> Optional[str
         if candidate in columns:
             return candidate
     return None
+
+
+def assert_unique_keys(df: DataFrame, keys: List[str], label: str) -> None:
+    """Échoue si la combinaison de clés n'est pas unique."""
+    dupes = df.groupBy(*keys).agg(count("*").alias("_n")).filter(col("_n") > 1)
+    n_dupes = dupes.count()
+    if n_dupes == 0:
+        return
+    sample = [row.asDict() for row in dupes.limit(5).collect()]
+    raise ValueError(f"{label}: {n_dupes} doublon(s) — exemples : {sample}")
 
 
 def load_gold_rules() -> Dict:
@@ -54,12 +65,19 @@ def main() -> None:
     rh_enriched = spark.read.format("delta").load(f"s3a://{bucket}/silver/rh_enriched")
     sport_ref = spark.read.format("delta").load(f"s3a://{bucket}/ref/sport")
 
+    assert_unique_keys(rh_enriched, ["employee_id"], "silver/rh_enriched")
+
     activities_by_year = (
         activities.withColumn("activity_start_ts", to_timestamp(col("start_date")))
         .withColumn("activity_year", year(col("activity_start_ts")))
         .filter(col("activity_year").isNotNull())
         .groupBy("employee_id", "activity_year")
         .agg(count("*").alias("physical_activities_count_year"))
+    )
+    assert_unique_keys(
+        activities_by_year,
+        ["employee_id", "activity_year"],
+        "agrégat activités par année",
     )
 
     years = activities_by_year.select("activity_year").distinct()
@@ -163,6 +181,11 @@ def main() -> None:
         "load_date",
     )
 
+    assert_unique_keys(out, ["employee_id", "year"], "gold/benefits_employee_year")
+    null_keys = out.filter(col("employee_id").isNull() | col("year").isNull()).count()
+    if null_keys:
+        raise ValueError(f"gold/benefits_employee_year : {null_keys} ligne(s) avec employee_id ou year null")
+
     out.write.format("delta").mode("overwrite").option("overwriteSchema", "true").save(
         f"s3a://{bucket}/gold/benefits_employee_year"
     )
@@ -178,4 +201,8 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except ValueError as exc:
+        print(f"FAIL: {exc}", file=sys.stderr)
+        sys.exit(1)

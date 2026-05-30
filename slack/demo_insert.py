@@ -9,8 +9,8 @@ import psycopg2
 
 COL_ID = "ID salarié"
 COL_SPORT = "Pratique d'un sport"
-COUNT = int(os.environ.get("DEMO_COUNT", 3))
-INTERVAL_SEC = int(os.environ.get("DEMO_INTERVAL_SEC", 60))
+COUNT = int(os.environ.get("DEMO_COUNT", 10))
+INTERVAL_SEC = int(os.environ.get("DEMO_INTERVAL_SEC", 15))
 
 
 def load_pairs():
