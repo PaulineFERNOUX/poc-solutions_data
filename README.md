@@ -84,30 +84,7 @@ docker compose run --rm spark --master 'local[*]' /app/jobs/export_powerbi_parqu
 
 **Qualité Postgres (optionnel) :** `docker compose run --rm soda`
 
----
 
-## CDC Debezium (flux incrémental)
-
-Debezium capture les changements Postgres (`INSERT`, `UPDATE`, `DELETE`) et les publie sur Kafka (`dbz.public.activities`). Le job `bronze_kafka.py` :
-
-1. Lit **uniquement les nouveaux messages** Kafka (checkpoint offsets sur MinIO : `_checkpoints/bronze_kafka_offsets.json`)
-2. Applique un **MERGE Delta** sur `bronze/activities` :
-   - `c` / `u` / `r` (snapshot) → insert ou mise à jour par `id`
-   - `d` → suppression physique de la ligne
-3. Enregistre le checkpoint **après** merge réussi (rejeu idempotent)
-
-La couche Silver lit l’état courant du bronze (plus de filtre `op = c`).
-
-| Variable | Effet |
-|----------|--------|
-| `BRONZE_KAFKA_RESET=true` | Supprime checkpoint + table bronze, relit Kafka depuis le début |
-| `BRONZE_KAFKA_CHECKPOINT` | URI du fichier checkpoint (défaut : `s3a://datalake/_checkpoints/...`) |
-
-**Rejeu complet datalake :** `docker compose down -v`, puis enchaînement d’installation initiale.
-
-**Nouvelles activités Postgres** (après `generator` ou inserts manuels) : relancer uniquement la chaîne Spark (Debezium doit rester actif).
-
----
 
 ## Utilisation courante
 
@@ -176,8 +153,8 @@ docker compose --profile slack run --rm slack python demo_insert.py
 | Variable | Effet |
 |----------|--------|
 | `SLACK_ENABLED=false` | Écoute Kafka sans envoyer sur Slack (ex. chargement masse) |
-| `DEMO_COUNT` | Nombre d’INSERT de démo (défaut : `3`) |
-| `DEMO_INTERVAL_SEC` | Intervalle entre INSERT (défaut : `60`) |
+| `DEMO_COUNT` | Nombre d’INSERT de démo (défaut : `10`) |
+| `DEMO_INTERVAL_SEC` | Intervalle entre INSERT (défaut : `15`) |
 
 Après un INSERT, relancer la chaîne Spark puis actualiser Power BI pour voir l’impact dans le reporting (voir [Utilisation courante](#utilisation-courante)).
 

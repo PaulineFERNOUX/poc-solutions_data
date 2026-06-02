@@ -15,7 +15,7 @@ Depuis `powerbi/` :
 
 Si blocage : `Set-ExecutionPolicy -Scope CurrentUser RemoteSigned` puis relancer.
 
-Le script crée `powerbi/.venv/` et installe `requirements.txt` (dont `matplotlib`, requis par Power BI).
+Le script crée `powerbi/.venv/` et installe `requirements.txt`.
 
 ---
 
@@ -36,11 +36,3 @@ Après un nouvel export Spark → **Accueil → Actualiser** dans Power BI.
 
 ---
 
-## Dépannage
-
-| Problème | Action |
-|----------|--------|
-| Modules Python manquants | `.\setup.ps1` |
-| Chemin Python refusé | Dossier `.venv`, pas `python.exe` |
-| `prime_amount` en texte | Power Query : `Number.FromText(..., "en-US")` |
-| Connexion MinIO | `docker compose up -d minio` + relancer export Spark |
